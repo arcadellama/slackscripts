@@ -1,0 +1,230 @@
+#!/usr/bin/env sh
+#
+# MIT License
+# 
+# Copyright (c) 2023 Justin Teague
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# service -- control (start/stop/etc.) or list system services
+
+set -eu
+LC_ALL=C
+
+PRGNAM='service'
+VERSION=0.0.1
+VERBOSE=0
+
+#### ENVIRONMENT ####
+PATH="/sbin:/usr/sbin:$PATH"
+ROOT="${ROOT:-/}"
+RC_DIR="$ROOT/etc/rc.d"
+
+#### FUNCTIONS ####
+usage() {
+  cat <<EOF
+  $PRGNAM -- Version $VERSION
+  USAGE
+        $PRGNAM [-d] -e
+        $PRGNAM [-d] -R
+        $PRGNAM [-dv] -l
+        $PRGNAM [-dv] -r
+        $PRGNAM [-dv] <script> <command>
+EOF
+  return "${1:-0}"
+}
+
+err() {
+  printf %s\\n "ERROR: $*" >&2
+}
+
+warn() {
+  if [ $VERBOSE -gt 0 ]; then
+    printf %s\\n "WARN: $*" >&2
+  fi
+}
+
+inf() {
+  if [ $VERBOSE -gt 0 ]; then
+    printf %s\\n "$*" >&2
+  fi
+}
+
+list_enabled_services() {
+  for e in "$RC_DIR"/rc.*; do
+    if [ -x "$e" ]; then
+      printf %s\\n "$e"
+    fi
+  done
+}
+
+list_files() {
+  for f in "$RC_DIR"/*; do
+    printf %s\\n "$f"
+  done
+}
+
+list_all_services() {
+  for s in "$RC_DIR"/rc.*; do
+    printf %s\\n "$s"
+  done
+}
+
+restart_services() {
+  for R in "$RC_DIR"/rc.*; do
+    if [ -x "$R" ]; then
+      "$R" stop
+      sleep 1
+      "$R" start
+    fi
+  done
+}
+
+is_system_script() {
+  for s in 0 4 6 K M S; do
+    if grep -q "$1" "$RC_DIR/rc.$s" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+is_local_script() {
+  for l in rc.local rc.local_shutdown; do
+    if grep -q "$1" "$RC_DIR/$l" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+generate_rc_local() {
+  cat <<EOF
+
+# $2 $1
+if [ -x $1 ]; then
+  $1 $2
+fi
+
+EOF
+}
+
+service_cmd() {
+  service="$1"
+  cmd="${2:-}"
+
+  case "$service" in
+    rc.*) : ;;
+    *) service="rc.$service" ;;
+  esac
+
+  if ! [ -f "$RC_DIR/$service" ]; then
+    err "$service not found."
+    return 1
+  fi
+
+  case "$cmd" in
+    enable)
+      # TODO: Check if service needs to be added to rc.local/_shutdown
+      if ! chmod +x "$RC_DIR/$service"; then
+        err "cannot enable $RC_DIR/$service"
+        return 1
+      fi
+      inf "$service enabled"
+      if ! is_system_script "$service"; then
+        if ! is_rc_local "$service"; then
+          printf "%s doesn't appear to be a system script\n" "$service"
+          printf "Do you want to add the following to rc.local?\n"
+          generate_rc_local "$RC_DIR/$service" "start"
+          printf 'Add %s to rc.local? (y/n) ' "$service"
+          while read -r prompt; do
+            case "$prompt" in
+              y | Y)
+                generate_rc_local "$RC_DIR/$service" "start" \
+                  >>"$RC_DIR/rc.local"
+                ;;
+              n | N)
+                return
+                ;;
+            esac
+          done
+        fi
+        if ! is_rc_local_shutdown "$service"; then
+          printf "%s doesn't appear to be a system script\n" "$service"
+          printf "Do you want to add the following to rc.local_shutdown?\n"
+          generate_rc_local "$RC_DIR/$service" "stop"
+          printf 'Add %s to rc.local_shutdown? (y/n) ' "$service"
+          while read -r prompt; do
+            case "$prompt" in
+              y | Y | yes | Yes | YES)
+                generate_rc_local "$RC_DIR/$service" "stop" \
+                  >>"$RC_DIR/rc.local_shutdown"
+                ;;
+              n | N | no | No | NO)
+                return
+                ;;
+              *) true ;;
+            esac
+          done
+        fi
+      fi
+      return
+      ;;
+    disable)
+      if ! chmod -x "$RC_DIR/$service"; then
+        err "cannot disable $RC_DIR/$service"
+        return 1
+      fi
+      inf "$service disabled"
+      return
+      ;;
+  esac
+
+  if [ -x "$RC_DIR/$service" ]; then
+    "$RC_DIR/$service" "$cmd"
+  fi
+
+}
+
+#### ENTRYPOINT ####
+main() {
+  # Parse flags
+  while getopts :dv flags; do
+    case "$flags" in
+      v) VERBOSE=$((VERBOSE + 1)) ;;
+      d) set -x ;;
+      *) break ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  # Parse commands / options
+  [ $# -gt 0 ] || usage 1
+  case "$1" in
+    -e) list_enabled_services ;;
+    -h) usage ;;
+    -l) list_files ;;
+    -r) list_all_services ;;
+    -R) restart_services ;;
+    *) service_cmd "$1" "${2:-}" ;;
+  esac
+}
+
+main "$@"
