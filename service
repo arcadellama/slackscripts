@@ -34,7 +34,7 @@ VERBOSE=0
 #### ENVIRONMENT ####
 PATH="/sbin:/usr/sbin:$PATH"
 ROOT="${ROOT:-/}"
-RC_DIR="$ROOT/etc/rc.d"
+RC_DIR="${ROOT%*/}/etc/rc.d"
 
 #### FUNCTIONS ####
 usage() {
@@ -86,15 +86,15 @@ list_all_services() {
   done
 }
 
-restart_services() {
-  for R in "$RC_DIR"/rc.*; do
-    if [ -x "$R" ]; then
-      "$R" stop
-      sleep 1
-      "$R" start
-    fi
-  done
-}
+# restart_services() {
+#   for R in "$RC_DIR"/rc.*; do
+#     if [ -x "$R" ]; then
+#       "$R" stop
+#       sleep 1
+#       "$R" start
+#     fi
+#   done
+# }
 
 is_system_script() {
   for s in 0 4 6 K M S; do
@@ -105,12 +105,17 @@ is_system_script() {
   return 1
 }
 
-is_local_script() {
-  for l in rc.local rc.local_shutdown; do
-    if grep -q "$1" "$RC_DIR/$l" >/dev/null 2>&1; then
-      return 0
-    fi
-  done
+is_rc_local() {
+  if grep -q "$1" "$RC_DIR/rc.local" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+is_rc_local_shutdown() {
+  if grep -q "$1" "$RC_DIR/rc.local_shutdown" >/dev/null 2>&1; then
+    return 0
+  fi
   return 1
 }
 
@@ -141,7 +146,6 @@ service_cmd() {
 
   case "$cmd" in
     enable)
-      # TODO: Check if service needs to be added to rc.local/_shutdown
       if ! chmod +x "$RC_DIR/$service"; then
         err "cannot enable $RC_DIR/$service"
         return 1
@@ -158,6 +162,7 @@ service_cmd() {
               y | Y)
                 generate_rc_local "$RC_DIR/$service" "start" \
                   >>"$RC_DIR/rc.local"
+                  break
                 ;;
               n | N)
                 return
@@ -175,6 +180,7 @@ service_cmd() {
               y | Y | yes | Yes | YES)
                 generate_rc_local "$RC_DIR/$service" "stop" \
                   >>"$RC_DIR/rc.local_shutdown"
+                break
                 ;;
               n | N | no | No | NO)
                 return
@@ -205,15 +211,15 @@ service_cmd() {
 #### ENTRYPOINT ####
 main() {
   # Parse flags
-  while getopts :dv flags; do
-    case "$flags" in
-      v) VERBOSE=$((VERBOSE + 1)) ;;
-      d) set -x ;;
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -d) set -x ; shift ;;
+      -v) VERBOSE=$((VERBOSE + 1)) ; shift ;;
+      -vv) VERBOSE=$((VERBOSE + 2)) ; shift ;;
+      -vvv) VERBOSE=$((VERBOSE + 3)) ; shift ;;
       *) break ;;
     esac
   done
-
-  shift $((OPTIND - 1))
 
   # Parse commands / options
   [ $# -gt 0 ] || usage 1
@@ -222,7 +228,8 @@ main() {
     -h) usage ;;
     -l) list_files ;;
     -r) list_all_services ;;
-    -R) restart_services ;;
+    #-R) restart_services ;;
+    -*) usage 1 ;;
     *) service_cmd "$1" "${2:-}" ;;
   esac
 }
