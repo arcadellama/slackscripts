@@ -1,4 +1,6 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
+#
+# service -- control (start/stop/etc.) or list system services in Slackware
 #
 # MIT License
 # 
@@ -22,32 +24,38 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-# service -- control (start/stop/etc.) or list system services
 
 set -eu
 LC_ALL=C
 
-PRGNAM='service'
-VERSION=0.0.1
-VERBOSE=0
+PRGNAM="${0##*/}"
+VERSION=0.1.0
 
-#### ENVIRONMENT ####
-PATH="/sbin:/usr/sbin:$PATH"
 ROOT="${ROOT:-/}"
 RC_DIR="${ROOT%*/}/etc/rc.d"
+VERBOSE=0
 
 #### FUNCTIONS ####
+version() {
+  cat <<EOF
+$PRGNAM -- Version $VERSION
+
+EOF
+}
+
 usage() {
   cat <<EOF
-  $PRGNAM -- Version $VERSION
-  USAGE
-        $PRGNAM [-d] -e
-        $PRGNAM [-d] -R
-        $PRGNAM [-dv] -l
-        $PRGNAM [-dv] -r
-        $PRGNAM [-dv] <script> <command>
+$(version)
+Usage:
+  $PRGNAM [-v] -e | -l
+  $PRGNAM [-v] <rc script> start|stop|etc.
+  $PRGNAM -h | -V
+
+  -e    Show services that are enabled
+  -l    List all scripts in /etc/rc.d
+  -v    Verbose
+
 EOF
-  return "${1:-0}"
 }
 
 err() {
@@ -55,46 +63,16 @@ err() {
 }
 
 warn() {
-  if [ $VERBOSE -gt 0 ]; then
+  if [ "$VERBOSE" -gt 0 ]; then
     printf %s\\n "WARN: $*" >&2
   fi
 }
 
 inf() {
-  if [ $VERBOSE -gt 0 ]; then
+  if [ "$VERBOSE" -gt 0 ]; then
     printf %s\\n "$*" >&2
   fi
 }
-
-list_enabled_services() {
-  for e in "$RC_DIR"/rc.*; do
-    if [ -x "$e" ]; then
-      printf %s\\n "$e"
-    fi
-  done
-}
-
-list_files() {
-  for f in "$RC_DIR"/*; do
-    printf %s\\n "$f"
-  done
-}
-
-list_all_services() {
-  for s in "$RC_DIR"/rc.*; do
-    printf %s\\n "$s"
-  done
-}
-
-# restart_services() {
-#   for R in "$RC_DIR"/rc.*; do
-#     if [ -x "$R" ]; then
-#       "$R" stop
-#       sleep 1
-#       "$R" start
-#     fi
-#   done
-# }
 
 is_system_script() {
   for s in 0 4 6 K M S; do
@@ -130,60 +108,123 @@ fi
 EOF
 }
 
-service_cmd() {
-  service="$1"
-  cmd="${2:-}"
+list_all_services() {
+  # Show rc files in base RC_DIR
+  local base_cnt=0
+  for s in "$RC_DIR"/rc.*; do
+    if [ "$base_cnt" -eq 0 ]; then
+      inf "From $RC_DIR:"
+      base_cnt=$((base_cnt + 1))
+    fi
+    printf %s\\n "${s##*/}"
+  done
 
-  case "$service" in
+  # Show rc files in rc.0, rc.1, rc.2, etc. (less common)
+  for r in 0 1 2 3 4 5 6; do
+    base_cnt=0
+    for s in "$RC_DIR"/rc"$r".d/rc.*; do
+      case "$s" in *rc.\*) continue ;; esac
+      if [ "$base_cnt" -eq 0 ]; then
+        inf "From $RC_DIR/rc.$r:"
+        base_cnt=$((base_cnt + 1))
+      fi
+      printf %s\\n "${s##*/}"
+    done
+  done
+}
+
+list_enabled_services() {
+  local base_count=0
+  for e in "$RC_DIR"/rc.*; do
+    if [ -x "$e" ]; then
+      if [ "$base_count" -eq 0 ]; then
+        inf "From $RC_DIR:"
+        base_count=$((base_count + 1))
+      fi
+      printf %s\\n "${e##*/}"
+    fi
+  done
+
+  for r in 0 1 2 3 4 5 6; do
+    base_count=0
+    for s in "$RC_DIR"/rc"$r".d/rc.*; do
+      if [ -x "$s" ]; then
+        if [ "$base_count" -eq 0 ]; then
+          inf "From $RC_DIR/rc$r.d:"
+          base_count=$((base_count + 1))
+        fi
+      printf %s\\n "${s##*/}"
+      fi
+    done
+  done
+}
+
+service_cmd() {
+  local service_name="$1"
+  local cmd="${2:-}"
+  local service_path=""
+
+  case "$service_name" in
     rc.*) : ;;
-    *) service="rc.$service" ;;
+    *) service_name="rc.$service_name" ;;
   esac
 
-  if ! [ -f "$RC_DIR/$service" ]; then
-    err "$service not found."
+  if [ -f "$RC_DIR/$service_name" ]; then
+    service_path="$RC_DIR/$service_name"
+  else
+    for r in 0 1 2 3 4 5 6; do
+      if [ -f "$RC_DIR/rc$r.d/$service_name" ]; then
+        service_path="$RC_DIR/rc$r.d/$service_name"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$service_path" ]; then
+    err "$service_name not found."
     return 1
   fi
 
   case "$cmd" in
     enable)
-      if ! chmod +x "$RC_DIR/$service"; then
-        err "cannot enable $RC_DIR/$service"
+      if ! chmod +x "$service_path"; then
+        err "cannot enable $service_name"
         return 1
       fi
-      inf "$service enabled"
-      if ! is_system_script "$service"; then
-        if ! is_rc_local "$service"; then
-          printf "%s doesn't appear to be a system script\n" "$service"
+      inf "$service_name enabled"
+      if ! is_system_script "$service_path"; then
+        if ! is_rc_local "$service_path"; then
+          printf "%s doesn't appear to be a system script\n" "$service_name"
           printf "Do you want to add the following to rc.local?\n"
-          generate_rc_local "$RC_DIR/$service" "start"
-          printf 'Add %s to rc.local? (y/n) ' "$service"
+          generate_rc_local "$service_path" "start"
+          printf 'Add %s to rc.local? (y/n) ' "$service_name"
           while read -r prompt; do
             case "$prompt" in
               y | Y)
-                generate_rc_local "$RC_DIR/$service" "start" \
+                generate_rc_local "$service_path" "start" \
                   >>"$RC_DIR/rc.local"
-                  break
+                break
                 ;;
               n | N)
-                return
+                break
                 ;;
             esac
           done
         fi
-        if ! is_rc_local_shutdown "$service"; then
-          printf "%s doesn't appear to be a system script\n" "$service"
+        if ! is_rc_local_shutdown "$service_name"; then
+          printf "%s doesn't appear to be a system script\n" "$service_name"
           printf "Do you want to add the following to rc.local_shutdown?\n"
-          generate_rc_local "$RC_DIR/$service" "stop"
-          printf 'Add %s to rc.local_shutdown? (y/n) ' "$service"
+          generate_rc_local "$service_path" "stop"
+          printf 'Add %s to rc.local_shutdown? (y/n) ' "$service_path"
           while read -r prompt; do
             case "$prompt" in
               y | Y | yes | Yes | YES)
-                generate_rc_local "$RC_DIR/$service" "stop" \
+                generate_rc_local "$service_path" "stop" \
                   >>"$RC_DIR/rc.local_shutdown"
                 break
                 ;;
               n | N | no | No | NO)
-                return
+                break
                 ;;
               *) true ;;
             esac
@@ -192,46 +233,57 @@ service_cmd() {
       fi
       return
       ;;
+
     disable)
-      if ! chmod -x "$RC_DIR/$service"; then
-        err "cannot disable $RC_DIR/$service"
+      if ! chmod -x "$service_path"; then
+        err "cannot disable $service_name"
         return 1
       fi
-      inf "$service disabled"
+      inf "$service_name disabled"
       return
       ;;
   esac
 
-  if [ -x "$RC_DIR/$service" ]; then
-    "$RC_DIR/$service" "$cmd"
+  if ! [ -x "$service_path" ]; then
+    err "$service_name is not enabled"
+    return 1
   fi
 
+  "$service_path" "$cmd"
 }
 
 #### ENTRYPOINT ####
 main() {
   # Parse flags
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -d) set -x ; shift ;;
-      -v) VERBOSE=$((VERBOSE + 1)) ; shift ;;
-      -vv) VERBOSE=$((VERBOSE + 2)) ; shift ;;
-      -vvv) VERBOSE=$((VERBOSE + 3)) ; shift ;;
-      *) break ;;
+  local cmd=""
+  while getopts :ehlvV flag; do
+    case "$flag" in
+      e) cmd_list_enabled=1 ;;
+      l) cmd_list_all=1 ;;
+      v) VERBOSE=$((VERBOSE + 1)) ;;
+      V) version ; return ;;
+      h) usage ; return ;;
+      *) usage ; return 1 ;;
     esac
   done
+  shift $((OPTIND - 1))
 
-  # Parse commands / options
-  [ $# -gt 0 ] || usage 1
-  case "$1" in
-    -e) list_enabled_services ;;
-    -h) usage ;;
-    -l) list_files ;;
-    -r) list_all_services ;;
-    #-R) restart_services ;;
-    -*) usage 1 ;;
-    *) service_cmd "$1" "${2:-}" ;;
-  esac
+  if [ -n "${cmd_list_enabled:-}" ]; then
+    list_enabled_services
+    return
+  fi
+
+  if [ -n "${cmd_list_all:-}" ]; then
+    list_all_services
+    return
+  fi
+
+  if [ -n "${1:-}" ]; then
+    service_cmd "$1" "${2:-}"
+    return
+  fi
+
+  usage
+  return 1
 }
-
 main "$@"
