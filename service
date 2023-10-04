@@ -33,7 +33,8 @@ VERSION=0.1.0
 ROOT="${ROOT:-/}"
 RC_PATH="/etc/rc.d"
 RC_DIR="${RC_DIR:-}"
-VERBOSE=0
+VERBOSE="${VERBOSE:-0}"
+INTERACTIVE="${INTERACTIVE:-1}"
 
 #### FUNCTIONS ####
 version() {
@@ -48,11 +49,12 @@ usage() {
 $(version)
 Usage:
   $PRGNAM [-r <root>] [-v] -e | -l
-  $PRGNAM [-r <root>] [-v] <rc script> start|stop|etc.
+  $PRGNAM [-r <root>] [-nv] <rc script> start|stop|etc.
   $PRGNAM -h
 
   -e    Show services that are enabled
   -l    List all scripts in /etc/rc.d
+  -n    Non-interactive mode, no prompts
   -r    Specify root path for Slackware (e.g., -r /mnt)
   -v    Verbose
 
@@ -76,9 +78,10 @@ inf() {
 }
 
 is_system_script() {
-  for s in 0 4 6 K M S; do
-    if grep -q "$1" "$RC_DIR/rc.$s" >/dev/null 2>&1; then
-      return 0
+  for s in "$RC_DIR"/rc.*; do
+    case "$s" in "$1") continue ;; esac # skip if this file
+    if grep -q "$1" "$s" >/dev/null 2>&1; then
+      return
     fi
   done
   return 1
@@ -193,8 +196,10 @@ service_cmd() {
         return 1
       fi
       inf "$service_name enabled"
-      if ! is_system_script "$service_path"; then
+      if [ "$INTERACTIVE" -gt 0 ] && \
+        ! is_system_script "$service_path"; then
         if ! is_rc_local "$service_path"; then
+          printf \\n
           printf "%s doesn't appear to be a system script\n" "$service_name"
           printf "Do you want to add the following to rc.local?\n"
           generate_rc_local "$service_path" "start"
@@ -212,7 +217,9 @@ service_cmd() {
             esac
           done
         fi
-        if ! is_rc_local_shutdown "$service_name"; then
+        if [ "$INTERACTIVE" -gt 0 ] && \
+          ! is_rc_local_shutdown "$service_name"; then
+          printf \\n
           printf "%s doesn't appear to be a system script\n" "$service_name"
           printf "Do you want to add the following to rc.local_shutdown?\n"
           generate_rc_local "$service_path" "stop"
@@ -262,10 +269,11 @@ main() {
   fi
   
   # Parse args
-  while getopts :ehlr:vV flag; do
+  while getopts :ehlnr:vV flag; do
     case "$flag" in
       e) cmd_list_enabled=1 ;;
       l) cmd_list_all=1 ;;
+      n) INTERACTIVE=0 ;;
       r) ROOT="${OPTARG:-}" ;;
       v) VERBOSE=$((VERBOSE + 1)) ;;
       V) version ; return ;;
