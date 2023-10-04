@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 #
-# service -- control (start/stop/etc.) or list system services in Slackware
-#
 # MIT License
 # 
 # Copyright (c) 2023 Justin Teague
@@ -24,15 +22,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
+# service -- control (start/stop/etc.) or list system services in Slackware
 
-set -eu
 LC_ALL=C
+set -eu
 
 PRGNAM="${0##*/}"
 VERSION=0.1.0
 
 ROOT="${ROOT:-/}"
-RC_DIR="${ROOT%*/}/etc/rc.d"
+RC_PATH="/etc/rc.d"
+RC_DIR="${RC_DIR:-}"
 VERBOSE=0
 
 #### FUNCTIONS ####
@@ -47,24 +47,25 @@ usage() {
   cat <<EOF
 $(version)
 Usage:
-  $PRGNAM [-v] -e | -l
-  $PRGNAM [-v] <rc script> start|stop|etc.
-  $PRGNAM -h | -V
+  $PRGNAM [-r <root>] [-v] -e | -l
+  $PRGNAM [-r <root>] [-v] <rc script> start|stop|etc.
+  $PRGNAM -h
 
   -e    Show services that are enabled
   -l    List all scripts in /etc/rc.d
+  -r    Specify root path for Slackware (e.g., -r /mnt)
   -v    Verbose
 
 EOF
 }
 
 err() {
-  printf %s\\n "ERROR: $*" >&2
+  printf %s\\n "Error: $*" >&2
 }
 
 warn() {
   if [ "$VERBOSE" -gt 0 ]; then
-    printf %s\\n "WARN: $*" >&2
+    printf %s\\n "Warn: $*" >&2
   fi
 }
 
@@ -254,12 +255,18 @@ service_cmd() {
 
 #### ENTRYPOINT ####
 main() {
+  if [ $# -eq 0 ]; then
+    usage
+    return 1
+  fi
+  
   # Parse flags
   local cmd=""
-  while getopts :ehlvV flag; do
+  while getopts :ehlr:vV flag; do
     case "$flag" in
       e) cmd_list_enabled=1 ;;
       l) cmd_list_all=1 ;;
+      r) ROOT="${OPTARG:-}" ;;
       v) VERBOSE=$((VERBOSE + 1)) ;;
       V) version ; return ;;
       h) usage ; return ;;
@@ -267,6 +274,14 @@ main() {
     esac
   done
   shift $((OPTIND - 1))
+
+  # Re-declar RC_DIR in case new root passed via config
+  RC_DIR="${ROOT%*/}/${RC_PATH#/}"
+
+  if ! [ -d "$RC_DIR" ]; then
+    err "$RC_DIR not found."
+    return 1
+  fi
 
   if [ -n "${cmd_list_enabled:-}" ]; then
     list_enabled_services
