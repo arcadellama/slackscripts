@@ -234,7 +234,7 @@ service_cmd() {
         ! is_system_script "$service_path"; then
         if ! is_rc_local "$service_path"; then
           printf \\n
-          printf "%s doesn't appear to be a system script\n" "$service_name"
+          printf "%s doesn't appear to be a system script\n\n" "$service_name"
           printf "Do you want to add the following to rc.local?\n"
           generate_rc_local "$service_path" "start"
           printf 'Add %s to rc.local? (y/n) ' "$service_name"
@@ -254,7 +254,7 @@ service_cmd() {
         if [ "$INTERACTIVE" -gt 0 ] && \
           ! is_rc_local_shutdown "$service_name"; then
           printf \\n
-          printf "%s doesn't appear to be a system script\n" "$service_name"
+          printf "%s doesn't appear to be a system script\n\n" "$service_name"
           printf "Do you want to add the following to rc.local_shutdown?\n"
           generate_rc_local "$service_path" "stop"
           printf 'Add %s to rc.local_shutdown? (y/n) ' "$service_path"
