@@ -60,12 +60,12 @@ EOF
 }
 
 err() {
-  printf %s\\n "Error: $*" >&2
+  printf %s\\n "ERROR: $*" >&2
 }
 
 warn() {
   if [ "$VERBOSE" -gt 0 ]; then
-    printf %s\\n "Warn: $*" >&2
+    printf %s\\n "WARN: $*" >&2
   fi
 }
 
@@ -246,11 +246,11 @@ service_cmd() {
   esac
 
   if ! [ -x "$service_path" ]; then
-    warn "$service_name is not enabled"
+    warn "$service_name is not enabled!"
     /bin/bash "$service_path" "$cmd"
+  else
+    "$service_path" "$cmd"
   fi
-
-  "$service_path" "$cmd"
 }
 
 main() {
