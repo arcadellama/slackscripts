@@ -49,14 +49,16 @@ usage() {
 $(version)
 Usage:
   $PRGNAM [-r <root>] [-v] -e | -l
+  $PRGNAM [-r <root>] [-v] -s <term>
   $PRGNAM [-r <root>] [-nv] <rc script> start|stop|etc.
   $PRGNAM -h
 
-  -e    Show services that are enabled
-  -l    List all scripts in /etc/rc.d
-  -n    Non-interactive mode, no prompts
-  -r    Specify root path for Slackware (e.g., -r /mnt)
-  -v    Verbose
+  -e            List "enabled" services only
+  -l            List all scripts in \$ROOT/etc/rc.d
+  -n            Non-interactive mode, no prompts
+  -r  <path>    Specify root path for Slackware (e.g., /mnt)
+  -s  <term>    Search for match
+  -v            Verbose
 
 EOF
 }
@@ -163,6 +165,26 @@ list_enabled_services() {
   done
 }
 
+search_rc_dir() {
+  local found=0 
+  for r in "$RC_DIR"/rc.*; do
+    local star=""
+    case "$r" in
+      *"$1"*)
+        found=$((found+1))
+        if [ -x "$r" ] && [ "$VERBOSE" -gt 0 ]; then 
+          star="*"
+        fi
+        printf %s%s\\n "$r" "$star"
+        ;;
+    esac
+  done
+  if [ "$found" -eq 0 ]; then
+    inf "No matches found in $RC_DIR."
+    return 2
+  fi
+}
+
 service_cmd() {
   local service_name="$1"
   local cmd="${2:-}"
@@ -190,6 +212,18 @@ service_cmd() {
   fi
 
   case "$cmd" in
+    status)
+      if [ -x "$RC_DIR"/"$service_name" ]; then
+        inf "$service_name is enabled."
+        "$service_path" "$cmd"
+        return
+      else
+        inf "$service_name is not enabled."
+        /bin/bash "$service_path" "$cmd"
+        return
+      fi
+      ;;
+
     enable)
       if ! chmod +x "$service_path"; then
         err "cannot enable $service_name"
@@ -253,7 +287,7 @@ service_cmd() {
   esac
 
   if ! [ -x "$service_path" ]; then
-    warn "$service_name is not enabled!"
+    warn "$service_name is not enabled"
     /bin/bash "$service_path" "$cmd"
   else
     "$service_path" "$cmd"
@@ -269,12 +303,13 @@ main() {
   fi
   
   # Parse args
-  while getopts :ehlnr:vV flag; do
+  while getopts :ehlnr:s:vV flag; do
     case "$flag" in
       e) cmd_list_enabled=1 ;;
       l) cmd_list_all=1 ;;
       n) INTERACTIVE=0 ;;
       r) ROOT="${OPTARG:-}" ;;
+      s) search_arg="${OPTARG:-}" ;;
       v) VERBOSE=$((VERBOSE + 1)) ;;
       V) version ; return ;;
       h) usage ; return ;;
@@ -291,6 +326,11 @@ main() {
     return 1
   fi
 
+  if [ -n "${search_arg:-}" ]; then
+    search_rc_dir "$search_arg"
+    return
+  fi
+
   if [ -n "${cmd_list_enabled:-}" ]; then
     list_enabled_services
     return
@@ -302,7 +342,11 @@ main() {
   fi
 
   if [ -n "${1:-}" ]; then
-    service_cmd "$1" "${2:-}"
+    if [ -z "${2:-}" ]; then
+      err "No command. Try: $PRGNAM -h"
+      return 1
+    fi
+    service_cmd "$1" "$2"
     return
   fi
 
