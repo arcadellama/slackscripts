@@ -246,22 +246,22 @@ service_cmd() {
   esac
 
   if ! [ -x "$service_path" ]; then
-    err "$service_name is not enabled"
-    return 1
+    warn "$service_name is not enabled"
+    /bin/bash "$service_path" "$cmd"
   fi
 
   "$service_path" "$cmd"
 }
 
-#### ENTRYPOINT ####
 main() {
+
+  # Exit if no args
   if [ $# -eq 0 ]; then
     usage
     return 1
   fi
   
-  # Parse flags
-  local cmd=""
+  # Parse args
   while getopts :ehlr:vV flag; do
     case "$flag" in
       e) cmd_list_enabled=1 ;;
@@ -275,7 +275,7 @@ main() {
   done
   shift $((OPTIND - 1))
 
-  # Re-declar RC_DIR in case new root passed via config
+  # Re-declare RC_DIR in case new root passed via config
   RC_DIR="${ROOT%*/}/${RC_PATH#/}"
 
   if ! [ -d "$RC_DIR" ]; then
@@ -301,4 +301,5 @@ main() {
   usage
   return 1
 }
+
 main "$@"
