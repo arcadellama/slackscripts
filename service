@@ -28,7 +28,7 @@ LC_ALL=C
 set -eu
 
 PRGNAM="${0##*/}"
-VERSION=0.1.0
+VERSION=0.1.1
 
 ROOT="${ROOT:-/}"
 RC_PATH="/etc/rc.d"
@@ -48,15 +48,15 @@ usage() {
   cat <<EOF
 $(version)
 Usage:
-  $PRGNAM [-r <root>] [-v] -e | -l
-  $PRGNAM [-r <root>] [-v] -s <term>
-  $PRGNAM [-r <root>] [-nv] <rc script> start|stop|etc.
+  $PRGNAM [-R <root>] [-v] -e | -l
+  $PRGNAM [-R <root>] [-v] -s <term>
+  $PRGNAM [-R <root>] [-nv] <rc script> start|stop|etc.
   $PRGNAM -h
 
   -e            List "enabled" services only
   -l            List all scripts in \$ROOT/etc/rc.d
   -n            Non-interactive mode, no prompts
-  -r  <path>    Specify root path for Slackware (e.g., /mnt)
+  -R  <path>    Specify root path for Slackware (e.g., /mnt)
   -s  <term>    Search for match
   -v            Verbose
 
@@ -303,12 +303,12 @@ main() {
   fi
   
   # Parse args
-  while getopts :ehlnr:s:vV flag; do
+  while getopts :ehlnR:s:vV flag; do
     case "$flag" in
       e) cmd_list_enabled=1 ;;
       l) cmd_list_all=1 ;;
       n) INTERACTIVE=0 ;;
-      r) ROOT="${OPTARG:-}" ;;
+      R) ROOT="${OPTARG:-}" ;;
       s) search_arg="${OPTARG:-}" ;;
       v) VERBOSE=$((VERBOSE + 1)) ;;
       V) version ; return ;;
