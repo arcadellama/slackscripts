@@ -24,17 +24,19 @@
 #
 # service -- control (start/stop/etc.) or list system services in Slackware
 
-LC_ALL=C
 set -eu
-
+LC_ALL=C
 PRGNAM="${0##*/}"
-VERSION=0.1.1
+VERSION=0.1.2
 
+#### ENVIRONMENT ####
 ROOT="${ROOT:-/}"
 RC_PATH="/etc/rc.d"
 RC_DIR="${RC_DIR:-}"
 VERBOSE="${VERBOSE:-0}"
 INTERACTIVE="${INTERACTIVE:-1}"
+ENABLED_ONLY="${ENABLED_ONLY:-}"
+SERVICES=""
 
 #### FUNCTIONS ####
 version() {
@@ -114,75 +116,41 @@ fi
 EOF
 }
 
-list_all_services() {
+get_services() {
   # Show rc files in base RC_DIR
-  local base_cnt=0
   for s in "$RC_DIR"/rc.*; do
-    if [ "$base_cnt" -eq 0 ]; then
-      inf "From $RC_DIR:"
-      base_cnt=$((base_cnt + 1))
+    if [ -n "$ENABLED_ONLY" ]; then
+      [ -x "$s" ] && printf %s\\n "$s"
+    else
+      printf %s\\n "$s"
     fi
-    printf %s\\n "${s##*/}"
   done
 
   # Show rc files in rc.0, rc.1, rc.2, etc. (less common)
   for r in 0 1 2 3 4 5 6; do
-    base_cnt=0
     for s in "$RC_DIR"/rc"$r".d/rc.*; do
       case "$s" in *rc.\*) continue ;; esac
-      if [ "$base_cnt" -eq 0 ]; then
-        inf "From $RC_DIR/rc.$r:"
-        base_cnt=$((base_cnt + 1))
+      if [ -n "$enabled_only" ]; then
+        [ -x "$s" ] && printf %s\\n "$s"
+      else
+        printf %s\\n "$s"
       fi
-      printf %s\\n "${s##*/}"
-    done
+      done
   done
 }
 
-list_enabled_services() {
-  local base_count=0
-  for e in "$RC_DIR"/rc.*; do
-    if [ -x "$e" ]; then
-      if [ "$base_count" -eq 0 ]; then
-        inf "From $RC_DIR:"
-        base_count=$((base_count + 1))
-      fi
-      printf %s\\n "${e##*/}"
-    fi
-  done
-
-  for r in 0 1 2 3 4 5 6; do
-    base_count=0
-    for s in "$RC_DIR"/rc"$r".d/rc.*; do
-      if [ -x "$s" ]; then
-        if [ "$base_count" -eq 0 ]; then
-          inf "From $RC_DIR/rc$r.d:"
-          base_count=$((base_count + 1))
-        fi
-      printf %s\\n "${s##*/}"
-      fi
-    done
+list_services() {
+  for s in $SERVICES; do
+    printf %s\\n "${s##*/}"
   done
 }
 
 search_rc_dir() {
-  local found=0 
-  for r in "$RC_DIR"/rc.*; do
-    local star=""
+  for r in $SERVICES; do
     case "$r" in
-      *"$1"*)
-        found=$((found+1))
-        if [ -x "$r" ] && [ "$VERBOSE" -gt 0 ]; then 
-          star="*"
-        fi
-        printf %s%s\\n "$r" "$star"
-        ;;
+      *"$1"*) printf %s\\n "$r" ;;
     esac
   done
-  if [ "$found" -eq 0 ]; then
-    inf "No matches found in $RC_DIR."
-    return 2
-  fi
 }
 
 service_cmd() {
@@ -303,13 +271,13 @@ main() {
   fi
   
   # Parse args
-  while getopts :ehlnR:s:vV flag; do
+  while getopts :ehlnR:svV flag; do
     case "$flag" in
-      e) cmd_list_enabled=1 ;;
-      l) cmd_list_all=1 ;;
+      e) ENABLED_ONLY=1 ;;
+      l) cmd_list=1 ;;
       n) INTERACTIVE=0 ;;
       R) ROOT="${OPTARG:-}" ;;
-      s) search_arg="${OPTARG:-}" ;;
+      s) cmd_search=1 ;;
       v) VERBOSE=$((VERBOSE + 1)) ;;
       V) version ; return ;;
       h) usage ; return ;;
@@ -326,18 +294,19 @@ main() {
     return 1
   fi
 
-  if [ -n "${search_arg:-}" ]; then
-    search_rc_dir "$search_arg"
+  SERVICES="$(get_services)"
+
+  if [ -n "${cmd_search:-}" ]; then
+    if [ -z "${1:-}" ]; then
+      usage
+      return 1
+    fi
+    search_rc_dir "$*"
     return
   fi
 
-  if [ -n "${cmd_list_enabled:-}" ]; then
-    list_enabled_services
-    return
-  fi
-
-  if [ -n "${cmd_list_all:-}" ]; then
-    list_all_services
+  if [ -n "${cmd_list:-}" ]; then
+    list_services
     return
   fi
 
@@ -347,6 +316,11 @@ main() {
       return 1
     fi
     service_cmd "$1" "$2"
+    return
+  fi
+
+  if [ -n "$ENABLED_ONLY" ]; then
+    list_services
     return
   fi
 
