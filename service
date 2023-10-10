@@ -137,7 +137,7 @@ get_services() {
   for r in 0 1 2 3 4 5 6; do
     for s in "$RC_DIR"/rc"$r".d/rc.*; do
       case "$s" in *rc.\*) continue ;; esac
-      if [ -n "$enabled_only" ]; then
+      if [ -n "$ENABLED_ONLY" ]; then
         [ -x "$s" ] && printf %s\\n "$s"
       else
         printf %s\\n "$s"
