@@ -27,7 +27,7 @@
 set -eu
 LC_ALL=C
 PRGNAM="${0##*/}"
-VERSION=0.1.3
+VERSION=0.1.4
 
 #### ENVIRONMENT ####
 ROOT="${ROOT:-/}"
@@ -84,9 +84,7 @@ inf() {
 is_system_script() {
   for s in $SERVICES; do
     case "$s" in 
-      "$1") continue ;;
-      *rc.local) continue ;;
-      *rc.local_shutdown) continue ;;
+      "$1" | *.rc.local* ) continue ;;
     esac
     if grep -q "$1" "$s" >/dev/null 2>&1; then
       inf "$1 found in $s"
@@ -147,9 +145,15 @@ get_services() {
 }
 
 list_services() {
-  for s in $SERVICES; do
-    printf %s\\n "${s##*/}"
-  done
+  if [ "$VERBOSE" -gt 0 ]; then
+    for s in $SERVICES; do
+      printf %s\\n "${s}"
+    done
+  else
+    for s in $SERVICES; do
+      printf %s\\n "${s##*/}"
+    done
+  fi
 }
 
 search_rc_dir() {
